@@ -1,20 +1,17 @@
-const express = require("express");
-const fs = require("fs");
-const path = require("path");
+const express=require("express");
+const fs=require("fs");
+const path=require("path");
+const app=express();
+const list=d=>fs.existsSync(d)?fs.readdirSync(d):[];
+const read=f=>JSON.parse(fs.readFileSync(f,"utf8"));
 
-const app = express();
-const read = f => JSON.parse(fs.readFileSync(f,"utf8"));
-const list = d => fs.existsSync(d) ? fs.readdirSync(d) : [];
-
-app.get("/", (_,res)=>res.send("ARC OK"));
-
-app.get("/protocols", (_,res)=>res.json(list("protocols")));
-app.get("/agents", (_,res)=>res.json(list("agents")));
-
-app.get("/agent/:id", (req,res)=>{
-	const f = path.join("agents", req.params.id + ".json");
-	if (!fs.existsSync(f)) return res.status(404).send("NOT FOUND");
-	res.json(read(f));
+app.get("/",(_,r)=>r.send("ARC OK"));
+app.get("/protocols",(_,r)=>r.json(list("protocols")));
+app.get("/agents",(_,r)=>r.json(list("agents")));
+app.get("/agent/:id",(q,r)=>{
+	const f=path.join("agents",q.params.id+".json");
+	if(!fs.existsSync(f))return r.sendStatus(404);
+	r.json(read(f));
 });
 
-app.listen(8080, ()=>console.log("RUNNING 8080"));
+app.listen(8080);
