@@ -1,32 +1,28 @@
 require("dotenv").config();
 const express=require("express");
-const jwt=require("jsonwebtoken");
-const bcrypt=require("bcryptjs");
-const fs=require("fs");
-const http=require("http");
+const Database=require("better-sqlite3");
 
-const app=express();
-app.use(express.json());
-const server=http.createServer(app);
+const app=express(); app.use(express.json());
+const db=new Database("db/arc.db");
 
-const SECRET=process.env.JWT_SECRET||"arcjwt";
-const read=f=>JSON.parse(fs.readFileSync(f,"utf8"));
+app.get("/",(_,r)=>r.send("ARC OK"));
 
-app.post("/login",(q,r)=>{
-  const u=read("users/admin.json");
-  if(!bcrypt.compareSync(q.body.password,u.password))return r.sendStatus(401);
-  r.json({token:jwt.sign({id:u.id},SECRET)});
+app.get("/agents",(_,r)=>{
+	const rows=db.prepare("SELECT id FROM agents").all();
+	r.json(rows.map(x=>x.id));
+});
+app.post("/agent",(q,r)=>{
+	db.prepare("INSERT OR REPLACE INTO agents VALUES (?,?)")
+		.run(q.body.id, JSON.stringify(q.body));
+	r.json({created:q.body.id});
+});
+app.get("/agent/:id",(q,r)=>{
+	const row=db.prepare("SELECT data FROM agents WHERE id=?").get(q.params.id);
+	if(!row)return r.sendStatus(404);
+	r.json(JSON.parse(row.data));
 });
 
-const auth=(q,r,n)=>{
-  try{jwt.verify(q.headers.authorization,SECRET);n();}
-  catch{r.sendStatus(401);}
-};
-
-app.get("/health",(_,r)=>r.send("OK"));
-app.get("/secure",auth,(_,r)=>r.json({secure:true}));
-
-server.listen(8080);
+app.listen(process.env.PORT||8080);
 const express=require("express");
 const fs=require("fs");
 const path=require("path");
