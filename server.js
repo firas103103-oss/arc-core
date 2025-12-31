@@ -1,49 +1,32 @@
 require("dotenv").config();
 const express=require("express");
+const jwt=require("jsonwebtoken");
+const bcrypt=require("bcryptjs");
 const fs=require("fs");
-const path=require("path");
 const http=require("http");
-const WebSocket=require("ws");
 
 const app=express();
 app.use(express.json());
-app.use(express.static(path.join(__dirname,"public")));
-
 const server=http.createServer(app);
-const wss=new WebSocket.Server({server});
 
-const API_KEY=process.env.ARC_KEY;
-const PORT=process.env.PORT||8080;
-
-const auth=(q,r,n)=>q.headers["x-api-key"]===API_KEY?n():r.sendStatus(401);
+const SECRET=process.env.JWT_SECRET||"arcjwt";
 const read=f=>JSON.parse(fs.readFileSync(f,"utf8"));
-const write=(f,o)=>fs.writeFileSync(f,JSON.stringify(o,null,2));
-const broadcast=m=>wss.clients.forEach(c=>c.readyState===1&&c.send(JSON.stringify(m)));
 
-app.get("/",(_,r)=>r.sendFile(path.join(__dirname,"public/index.html")));
-
-app.get("/tasks",auth,(_,r)=>r.json(read("tasks.json")));
-app.post("/task",auth,(q,r)=>{
-	const tasks=read("tasks.json");
-	const t={id:Date.now(),...q.body,status:"queued"};
-	tasks.push(t);
-	write("tasks.json",tasks);
-	broadcast({event:"task_queued",task:t});
-	r.json(t);
-});
-app.put("/task/:id",auth,(q,r)=>{
-	const tasks=read("tasks.json");
-	const i=tasks.findIndex(t=>t.id==q.params.id);
-	if(i<0)return r.sendStatus(404);
-	tasks[i]={...tasks[i],...q.body};
-	write("tasks.json",tasks);
-	broadcast({event:"task_updated",task:tasks[i]});
-	r.json(tasks[i]);
+app.post("/login",(q,r)=>{
+  const u=read("users/admin.json");
+  if(!bcrypt.compareSync(q.body.password,u.password))return r.sendStatus(401);
+  r.json({token:jwt.sign({id:u.id},SECRET)});
 });
 
-wss.on("connection",ws=>ws.send(JSON.stringify({event:"connected"})));
+const auth=(q,r,n)=>{
+  try{jwt.verify(q.headers.authorization,SECRET);n();}
+  catch{r.sendStatus(401);}
+};
 
-server.listen(PORT,()=>console.log("RUNNING",PORT));
+app.get("/health",(_,r)=>r.send("OK"));
+app.get("/secure",auth,(_,r)=>r.json({secure:true}));
+
+server.listen(8080);
 const express=require("express");
 const fs=require("fs");
 const path=require("path");

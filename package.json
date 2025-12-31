@@ -19,7 +19,9 @@
   },
   "homepage": "https://github.com/firas103103-oss/arc-core#readme",
   "dependencies": {
+    "bcryptjs": "^3.0.3",
     "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
     "ws": "^8.18.3"
   }
 }
