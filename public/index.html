@@ -7,9 +7,13 @@
 <body>
 <h1>ARC Dashboard</h1>
 
-<input id="email" placeholder="email">
-<input id="password" type="password" placeholder="password">
-<button onclick="login()">Login</button>
+<form id="loginForm">
+  <label>Email<br><input type="email" id="email" required></label><br>
+  <label>Password<br><input type="password" id="password" required></label><br>
+  <button type="submit">Login</button>
+</form>
+
+<button onclick="load()">Load Data</button>
 
 <pre id="out"></pre>
 

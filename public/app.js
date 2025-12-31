@@ -1,23 +1,32 @@
-let TOKEN = "";
 
-async function login() {
-  const r = await fetch("/login", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      email: email.value,
-      password: password.value
-    })
-  });
-  const d = await r.json();
-  TOKEN = d.token;
-  out.textContent = "LOGGED IN";
-  load();
-}
 
 async function load() {
-  const r = await fetch("/secure", {
-    headers: { "Authorization": TOKEN }
-  });
+  const r = await fetch("/secure");
   out.textContent = JSON.stringify(await r.json(), null, 2);
+}
+
+const loginForm = document.getElementById('loginForm');
+const out = document.getElementById('out');
+
+if (loginForm) {
+  loginForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = document.getElementById('email').value;
+    const password = document.getElementById('password').value;
+    try {
+      const res = await fetch('/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        out.textContent = 'Login successful! Token: ' + data.token;
+      } else {
+        out.textContent = 'Login failed!';
+      }
+    } catch {
+      out.textContent = 'Error connecting to server.';
+    }
+  });
 }
