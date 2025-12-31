@@ -19,6 +19,7 @@
   },
   "homepage": "https://github.com/firas103103-oss/arc-core#readme",
   "dependencies": {
-    "express": "^5.2.1"
+    "express": "^5.2.1",
+    "ws": "^8.18.3"
   }
 }
