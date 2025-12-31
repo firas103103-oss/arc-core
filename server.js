@@ -1,103 +1,61 @@
 require("dotenv").config();
-const express=require("express");
-const Database=require("better-sqlite3");
+const express = require("express");
+const bcrypt = require("bcryptjs");
+const Database = require("better-sqlite3");
+const Joi = require("joi");
+const auth = require("./auth");
+const CircuitBreaker = require("opossum");
 
-const app=express(); app.use(express.json());
-const db=new Database("db/arc.db");
-
-app.get("/",(_,r)=>r.send("ARC OK"));
-
-app.get("/agents",(_,r)=>{
-	const rows=db.prepare("SELECT id FROM agents").all();
-	r.json(rows.map(x=>x.id));
-});
-app.post("/agent",(q,r)=>{
-	db.prepare("INSERT OR REPLACE INTO agents VALUES (?,?)")
-		.run(q.body.id, JSON.stringify(q.body));
-	r.json({created:q.body.id});
-});
-app.get("/agent/:id",(q,r)=>{
-	const row=db.prepare("SELECT data FROM agents WHERE id=?").get(q.params.id);
-	if(!row)return r.sendStatus(404);
-	r.json(JSON.parse(row.data));
-});
-
-app.listen(process.env.PORT||8080);
-const express=require("express");
-const fs=require("fs");
-const path=require("path");
-const http=require("http");
-const WebSocket=require("ws");
-
-const config=require("./config.json");
-const logFile=fs.createWriteStream("./logs/arc.log",{flags:"a"});
-const log=m=>logFile.write(new Date().toISOString()+" "+m+"\n");
-const app=express();
+const db = new Database("db/arc.db");
+const app = express();
 app.use(express.json());
-const server=http.createServer(app);
-const wss=new WebSocket.Server({server});
+app.use(express.static("public"));
+app.use(auth.rateLimiter);
 
-const auth=(q,r,n)=>q.headers["x-api-key"]===config.apiKey?n():r.sendStatus(401);
-
-const list=d=>fs.existsSync(d)?fs.readdirSync(d):[];
-const read=f=>JSON.parse(fs.readFileSync(f,"utf8"));
-const write=(f,o)=>fs.writeFileSync(f,JSON.stringify(o,null,2));
-
-const AGENTS="agents", PROTOCOLS="protocols";
-const af=id=>path.join(AGENTS,id+".json");
-const pf=id=>path.join(PROTOCOLS,id+".json");
-const broadcast=m=>wss.clients.forEach(c=>c.readyState===1&&c.send(JSON.stringify(m)));
-
-app.use((q,r,n)=>{log(q.method+" "+q.url);n();});
-
-app.get("/",(_,r)=>r.send("ARC OK"));
-app.get("/agents",auth,(_,r)=>r.json(list(AGENTS)));
-app.post("/agent",auth,(q,r)=>{
-	if(!q.body.id)return r.sendStatus(400);
-	write(af(q.body.id),q.body);
-	broadcast({event:"agent_created",id:q.body.id});
-	log("agent "+q.body.id+" created");
-	r.json({created:q.body.id});
+const breaker = new CircuitBreaker((fn) => fn(), {
+  timeout: 3000,
+  errorThresholdPercentage: 50,
+  resetTimeout: 10000,
 });
-app.get("/protocols",auth,(_,r)=>r.json(list(PROTOCOLS)));
+app.use((req, res, next) => breaker.fire(next).catch(() => res.sendStatus(503)));
 
-wss.on("connection",ws=>{log("ws connected");ws.send(JSON.stringify({event:"connected"}));});
-
-server.listen(config.port,()=>log("server started"));
-const express=require("express");
-const fs=require("fs");
-const path=require("path");
-const http=require("http");
-const WebSocket=require("ws");
-
-const config=require("./config.json");
-
-const app=express();
-app.use(express.json());
-const server=http.createServer(app);
-const wss=new WebSocket.Server({server});
-
-const auth=(q,r,n)=>q.headers["x-api-key"]===config.apiKey?n():r.sendStatus(401);
-
-const list=d=>fs.existsSync(d)?fs.readdirSync(d):[];
-const read=f=>JSON.parse(fs.readFileSync(f,"utf8"));
-const write=(f,o)=>fs.writeFileSync(f,JSON.stringify(o,null,2));
-
-const AGENTS="agents", PROTOCOLS="protocols";
-const af=id=>path.join(AGENTS,id+".json");
-const pf=id=>path.join(PROTOCOLS,id+".json");
-const broadcast=m=>wss.clients.forEach(c=>c.readyState===1&&c.send(JSON.stringify(m)));
-
-app.get("/",(_,r)=>r.send("ARC OK"));
-app.get("/agents",auth,(_,r)=>r.json(list(AGENTS)));
-app.post("/agent",auth,(q,r)=>{
-	if(!q.body.id)return r.sendStatus(400);
-	write(af(q.body.id),q.body);
-	broadcast({event:"agent_created",id:q.body.id});
-	r.json({created:q.body.id});
+const loginSchema = Joi.object({
+  email: Joi.string().email().required(),
+  password: Joi.string().min(6).required(),
 });
-app.get("/protocols",auth,(_,r)=>r.json(list(PROTOCOLS)));
 
-wss.on("connection",ws=>ws.send(JSON.stringify({event:"connected"})));
+app.post("/login", async (req, res) => {
+  const { error } = loginSchema.validate(req.body);
+  if (error) return res.sendStatus(400);
 
-server.listen(config.port);
+  const u = db.prepare("SELECT * FROM users WHERE email=?").get(req.body.email);
+  if (!u || !bcrypt.compareSync(req.body.password, u.password_hash))
+    return res.sendStatus(401);
+
+  const token = auth.issueToken({ id: u.id, role: u.role }, process.env.TOKEN_TTL);
+  const refresh = auth.issueToken({ id: u.id }, process.env.REFRESH_TTL);
+
+  res.json({ token, refresh });
+});
+
+app.post("/refresh", (req, res) => {
+  try {
+    const payload = jwt.verify(req.body.refresh, process.env.JWT_SECRET);
+    const token = auth.issueToken({ id: payload.id }, process.env.TOKEN_TTL);
+    res.json({ token });
+  } catch {
+    res.sendStatus(401);
+  }
+});
+
+app.get("/secure", auth.verify, (req, res) => {
+  res.json({ ok: true, user: req.user });
+});
+
+/* BASIC HEALTH */
+app.get("/", (_, res) => res.send("ARC OK"));
+app.get("/health", (_, res) => res.json({ status: "ok" }));
+
+/* START */
+const PORT = process.env.PORT || 8080;
+app.listen(PORT, () => console.log("SERVER RUNNING", PORT));

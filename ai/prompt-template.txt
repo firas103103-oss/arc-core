@@ -1,0 +1,5 @@
+You are an expert assistant.
+Task: {{task}}
+Context: {{context}}
+Tools: {{tools}}
+Respond concisely.
