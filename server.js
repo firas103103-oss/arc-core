@@ -1,3 +1,49 @@
+require("dotenv").config();
+const express=require("express");
+const fs=require("fs");
+const path=require("path");
+const http=require("http");
+const WebSocket=require("ws");
+
+const app=express();
+app.use(express.json());
+app.use(express.static(path.join(__dirname,"public")));
+
+const server=http.createServer(app);
+const wss=new WebSocket.Server({server});
+
+const API_KEY=process.env.ARC_KEY;
+const PORT=process.env.PORT||8080;
+
+const auth=(q,r,n)=>q.headers["x-api-key"]===API_KEY?n():r.sendStatus(401);
+const read=f=>JSON.parse(fs.readFileSync(f,"utf8"));
+const write=(f,o)=>fs.writeFileSync(f,JSON.stringify(o,null,2));
+const broadcast=m=>wss.clients.forEach(c=>c.readyState===1&&c.send(JSON.stringify(m)));
+
+app.get("/",(_,r)=>r.sendFile(path.join(__dirname,"public/index.html")));
+
+app.get("/tasks",auth,(_,r)=>r.json(read("tasks.json")));
+app.post("/task",auth,(q,r)=>{
+	const tasks=read("tasks.json");
+	const t={id:Date.now(),...q.body,status:"queued"};
+	tasks.push(t);
+	write("tasks.json",tasks);
+	broadcast({event:"task_queued",task:t});
+	r.json(t);
+});
+app.put("/task/:id",auth,(q,r)=>{
+	const tasks=read("tasks.json");
+	const i=tasks.findIndex(t=>t.id==q.params.id);
+	if(i<0)return r.sendStatus(404);
+	tasks[i]={...tasks[i],...q.body};
+	write("tasks.json",tasks);
+	broadcast({event:"task_updated",task:tasks[i]});
+	r.json(tasks[i]);
+});
+
+wss.on("connection",ws=>ws.send(JSON.stringify({event:"connected"})));
+
+server.listen(PORT,()=>console.log("RUNNING",PORT));
 const express=require("express");
 const fs=require("fs");
 const path=require("path");
