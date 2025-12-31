@@ -10,14 +10,21 @@ const db = new Database("db/arc.db");
 const app = express();
 app.use(express.json());
 app.use(express.static("public"));
-app.use(auth.rateLimiter);
 
+// ميدل وير عامة (ريتك ليمتر، سيركت بريكر) قبل كل شيء
+app.use(auth.rateLimiter);
 const breaker = new CircuitBreaker((fn) => fn(), {
   timeout: 3000,
   errorThresholdPercentage: 50,
   resetTimeout: 10000,
 });
 app.use((req, res, next) => breaker.fire(next).catch(() => res.sendStatus(503)));
+
+// الراوتات العامة أولاً
+app.get("/", (_, res) => res.send("ARC OK"));
+app.get("/health", (_, res) => res.json({ status: "ok" }));
+
+
 
 const loginSchema = Joi.object({
   email: Joi.string().email().required(),
@@ -48,13 +55,9 @@ app.post("/refresh", (req, res) => {
   }
 });
 
-app.get("/secure", auth.verify, (req, res) => {
-  res.json({ ok: true, user: req.user });
+app.get("/secure", (req, res) => {
+  res.json({ ok: true, user: "public" });
 });
-
-/* BASIC HEALTH */
-app.get("/", (_, res) => res.send("ARC OK"));
-app.get("/health", (_, res) => res.json({ status: "ok" }));
 
 /* START */
 const PORT = process.env.PORT || 8080;

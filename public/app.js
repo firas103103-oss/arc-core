@@ -1,8 +1,14 @@
 
 
+
 async function load() {
-  const r = await fetch("/secure");
-  out.textContent = JSON.stringify(await r.json(), null, 2);
+  out.textContent = "Loading...";
+  try {
+    const r = await fetch("/secure");
+    out.textContent = JSON.stringify(await r.json(), null, 2);
+  } catch {
+    out.textContent = "Error loading data.";
+  }
 }
 
 const loginForm = document.getElementById('loginForm');
